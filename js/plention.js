@@ -1,27 +1,9 @@
-(function(window){
+(function($){
 
     var
-        // using qwery from ender js
-        Q = utils.qwery
-        // using bean from ender js
-        , bean = utils.bean
-        // using bonzo from ender js
-        , bonzo = utils.bonzo
-        // default animation timing
-        , default_animations = {
-            time_start : 'now',
-            duration : 500, //ms
-            easing : 'linear',
-            selectors: [],
-            properties: [],
-        }
 
-        , default_events = {
-            in : '',
-            out : ''
-        }
 
-        , _type = (function(){
+        _type = (function(){
             var
                 toString = Object.prototype.toString,
                 class2type = {};
@@ -39,68 +21,6 @@
                 return class2type[ toString.call(obj) ];
             }
         })()
-
-        , _extend = function(default_obj, new_obj) {
-            var aux = {};
-
-            for ( attr in default_obj ) {
-                if ( default_obj.hasOwnProperty(attr) ) {
-                    aux[attr] = default_obj[attr];
-                }
-            }
-
-            for ( attr in new_obj ) {
-                if ( new_obj.hasOwnProperty(attr) ) {
-                    aux[attr] = new_obj[attr];
-                }
-            }
-
-            return aux;
-        }
-
-        , _fixAttr = function( obj ) {
-            // timestart
-            if ( _type( obj.time_start ) === 'string' && obj.time_start !== '' ) {
-                if ( obj.time_start === 'now' ){
-                    obj.time_start = 0;
-                }
-            }
-
-            // selectors
-            if ( _type( obj.selectors ) === 'string' && obj.selectors !== ''  ) {
-                obj.selectors = [ obj.selectors ];
-            }
-
-            // properties
-            if ( _type( obj.properties ) === 'string' && obj.properties !== '' ) {
-                var prop = obj.properties.replace(' ', '').split(';'),
-                    k, i, aux = [];
-
-                for ( i = 0, k = prop.length; i < k; i++ ) {
-                    if ( prop[i].replace(' ', '') !== '' ) {
-                        var attr_value = prop[i].split(':');
-                        if ( attr_value.length == 2 ) {
-                            aux.push({
-                                property: attr_value[0],
-                                value: attr_value[1]
-                            });
-                        }
-                    }
-                }
-
-                obj.properties = aux;
-            }
-
-            return obj;
-        }
-
-        , _bind = function() {
-            bean.on.apply(this, arguments);
-        }
-
-        , _unbind = function() {
-            bean.off.apply(this, arguments);
-        }
 
         ,  _cssProperty = function(property, returnProperty) {
             var body = document.body || document.documentElement,
@@ -146,192 +66,320 @@
         , cssVendor = _cssVendor();
 
 
-    /* 
-        this class defines a single animation
-    */
-    function PlentionAnimation() {
+    /**
+     * 
+     * Define a class for a single animation
+     * 
+     * @param {Element} root Father object
+     * @param {Object}  events Object events with in, out properties
+     * @param {Object}  animation User Animation
+     * @returns Returns -1 if a precedes b, 1 if a follows b
+     */
 
+    function SingleAnimation( root, events, animation, plention ) {
+        // Saving
+        this.plention = plention;
+        this.$root = $(root);
+        this.events = events;
+        this.animation = animation;
+        this.timeout_obj = null;
+
+        // init
+        this.init();
+
+        return this;
     }
 
+    SingleAnimation.prototype = {
+
+        defaults : {
+            timeout : 0,
+            duration : 500, //ms
+            easing : 'linear',
+            selectors: [],
+            properties: [],
+        },
+
+        /**
+         * 
+         * Init a SingleAnimation Object
+         * 
+         */
+        init : function() {
+            this.fixAttr();
+            this.appendDefaultAttr();
+        },
+
+        /**
+         * 
+         * Fix users atributes
+         * 
+         */
+
+        fixAttr : function() {
+
+            var animation = this.animation;
+
+            // selector, if is string, make it array
+            if ( _type( animation.selectors ) === 'string' ) {
+                animation.selectors = [ animation.selectors ];
+            }
+
+            // properties, like background-color:red;margin-top:10px;
+            // to { "background-color": "red", "margin-top": "10px" }
+            if ( _type( animation.properties ) === 'string') {
+                var props = animation.properties.replace(' ', '').split(';'),
+                    aux = [];
+
+                // loop throught properties
+                for ( var i = 0, k = props.length; i < k; i++ ) {
+                    var prop = props[i].split(':');
+                    if ( prop.length === 2 ) {
+                        aux.push({
+                            property: prop[0],
+                            value: prop[1]
+                        });
+                    }
+                }
+
+                animation.properties = aux;
+            }
+
+            this.animation = animation;
+
+        },
+
+        /**
+         * 
+         * Set defaults attributes
+         * 
+         */
+        appendDefaultAttr : function() {
+            this.animation = $.extend({}, this.defaults, this.animation);
+        },
+
+        /**
+         * 
+         * Clear any timeout
+         * 
+         */
+
+        clearTimeout : function() {
+            clearTimeout(this.timeout_obj);
+        },
+
+        /**
+         * 
+         * Starts this animation, not run
+         * 
+         */
+        start : function() {
+            this.clearTimeout();
+
+            var currentDuration, currentTimeout,
+                that = this;
+
+            currentDuration = Math.min( this.animation.duration, this.animation.timeout + this.animation.duration - this.plention.animationOffset );
+            currentTimeout = Math.max(0, this.animation.timeout - this.animationOffset);
+
+            this.currentDuration = currentDuration;
+
+            if ( currentTimeout !== 0 ) {
+                this.timeout_obj = setTimeout(that.animate, currentTimeout);
+            } else {
+                that.animate();
+            }
+
+        },
+
+        /**
+         * 
+         * Stops this animation
+         * 
+         */
+        stop : function() {
+            this.clearTimeout();
+
+        }
+    }
+
+
     // plention obj
-    function Plention(events, animations, root) {
-        var that = this;
-        this.animations = animations;
-        this.root = root;
+    function Plention( root, options ) {
+
+        var that = this,
+            events = options[0],
+            animations = options[1];
+
+        this.$root = $(root);
         this.events = events;
-        this.animation_timeouts = [];
-
-        // intern use
-        this.start_time;
-
-        // applying events
-        _bind( this.root, this.events.in, function(){
-            that.begin();
-        });
-        _bind( this.root, this.events.out, function(){
-            that.end();
-        });
+        this.plentions = [];
         
+        for ( var i = 0, k = animations.length; i < k; i++ ) {
+            this.plentions[ i ] = new SingleAnimation( root, events, animations[ i ], this );
+        }
+
+        this.init();
 
         return this;
     }
 
     Plention.prototype = {
-        begin : function() {
-            var i, k, animation, that = this, timeout_animation;
+        /**
+         * 
+         * Init a Plention Object
+         * 
+         */
+        init : function() {
 
-            // clear animation timeouts
-            for ( i = 0, k = this.animation_timeouts.length; i < k; i++ ) {
-                clearTimeout( this.animation_timeouts[i] );
-            }
-            this.animation_timeouts = [];
+            // time when animation or deanimation begins
+            this.start_time = 0;
+            // timeouts
+            this.timeout_obj = null;
 
-            // put start time
-            this.time_start = ( new Date() ).getTime();
-
-            // loop throwght animations
-            for ( i = 0, k = this.animations.length; i < k; i++ ){
-                animation = this.animations[i];
-
-                timeout_animation = (function(that, animation){
-                    var t;
-
-                    t = setTimeout(function(){
-                        that.animate(animation);
-                    }, animation.time_start + 1);
-
-                    return t;
-                })(that, animation);
-
-                this.animation_timeouts.push( timeout_animation );
-
-            }
-
-        },
-        end : function() {
-            var diff = (new Date()).getTime() - this.start_time;
-
-            // lopp throwght animations
-            for ( i = 0, k = this.animations.length; i < k; i++ ){
-                animation = this.animations[i];
-
-                // check if begin now
-                // if ( animation.time_start === 0 ) {
-                //     this.animate(animation);
-                // }
-
-            }
+            this.updateMaxDuration();
+            this.appendListeners();
         },
 
-        _animate : (function(){
-            var func;
-            if ( hasTransition ) {
-                func = function(obj, animation, duration) {
-                    var nextTransitionProperty,
-                        currentTransitionProperty = bonzo(obj).css(cssVendor + 'transition'),
-                        css = {};
+        /**
+         * 
+         * Loop throung all single_animation and update animationDuration
+         * 
+         */
 
-                    if (currentTransitionProperty === 'all 0s ease 0s') {
-                        currentTransitionProperty = '';
-                    }
-                    
-                    nextTransitionProperty = ( !!currentTransitionProperty ) ? currentTransitionProperty.split(',') : [];
+        updateMaxDuration : function() {
+            var that = this;
 
-                    // for each property
-                    for ( var i = 0, k = animation.properties.length; i < k; i++ ) {
-                        nextTransitionProperty.push([ animation.properties[i].property, duration + 'ms', animation.easing, '0s' ].join(' ') )
-                        css[animation.properties[i].property] = animation.properties[i].value;
+            // calculating duration of all animation togheter 
+            this.animationDuration = (function(){
+                var plention, max_duration = 0;
+
+                for ( var i = 0, k = that.plentions.length; i < k; i++ ) {
+                    plention = that.plentions[ i ];
+
+                    max_duration = Math.max( plention.animation.timeout +
+                        plention.animation.duration, max_duration );
+                }
+
+                return max_duration;
+            }());
+
+            this.animationOffset = 0;
+
+        },
+
+        /**
+         * 
+         * append Event Listeners in and out
+         * 
+         */
+
+        appendListeners : function() {
+
+            var events = this.events,
+                $root = this.$root
+                that = this;
+
+            // append events in
+            if ( events.in ) {
+                $root.on( events.in, function(e){
+                    if ( e && e.preventDefault ) {
+                        e.preventDefault();
                     }
 
-                    bonzo(obj).css(cssVendor + 'transition', nextTransitionProperty).css(css);
-                }
-            } else {
-                func = function() {
+                    that.callbackIn();
 
-                }
+                    return false;
+                });
             }
 
-            return func;
-        })(),
+            // append events out
+            if ( events.out ) {
+                $root.on( events.out, function(e){
+                    if ( e && e.preventDefault ) {
+                        e.preventDefault();
+                    }
 
-        animate : function(animation) {
-            var now = (new Date()).getTime(),
-                diff = this.time_start - now,
-                duration = animation.duration - diff,
-                objs = Q(animation.selectors.join(','), this.root),
-                obj;
+                    that.callbackOut();
 
-            // test if has transition
-            for ( var i = 0, k = objs.length; i < k; i++ ) {
-                obj = objs[i];
-                this._animate(obj, animation, duration);
+                    return false;
+                });
             }
 
         },
 
-        deanimate : function( animation ) {
+        /**
+         * 
+         * event callback for in - start all plentions
+         * 
+         */
 
-        }
-    }
+        callbackIn : function(e) {
+            var plentions = this.plentions,
+                start_time = this.start_time,
+                animationDuration = this.animationDuration,
+                now = (new Date()).getTime();
 
-    function plention(events, animations, root) {
-        var 
-            root = root || '',
-            // loop count
-            k, i,
 
-            // roots
-            roots, // array
+            this.animationOffset = Math.max(0, Math.min(animationDuration, this.animationOffset - ( now - start_time ) ));
+            this.start_time = now;
 
-            // plentions obj
-            plentions, // array
-
-            // child
-            child;
-
-        // extends each animations
-        for ( i = 0, k = animations.length; i < k; i++ ) {
-            animations[i] = _fixAttr( _extend( default_animations, animations[i] ));
-        }
-
-        // extends events
-        events = _extend( default_events, events );
-
-        // make root an array
-        if ( _type(root) !== "array" ) {
-            if ( _type(root) === 'string' ) {
-                if ( root === '' ) {
-                    root = document;
-                }
-                roots = Q(root);
-            } else {
-                roots = [ root ];
+            for ( var i = 0, k = plentions.length; i < k; i++ ) {
+                plentions[ i ].start();
             }
+        },
+
+        /**
+         * 
+         * event callback for out - stop all plentions
+         * 
+         */
+        callbackOut : function(e) {
+            var plentions = this.plentions,
+                start_time = this.start_time,
+                animationDuration = this.animationDuration,
+                now = (new Date()).getTime();
+
+            this.animationOffset = Math.max(0, Math.min(animationDuration, this.animationOffset + now - start_time ));
+            this.start_time = now;
+
+
+            for ( var i = 0, k = plentions.length; i < k; i++ ) {
+                plentions[ i ].stop();
+            }
+        },
+
+        /**
+         * 
+         * Fix users atributes
+         * 
+         */
+    };
+
+    var pluginName = 'plention',
+        methods = {
+            init : function() {
+
+                var args = arguments;
+
+                return this.each(function(){
+                    if ( ! $(this).data( pluginName ) ) {
+                        $(this).data( pluginName, new Plention(this, args)); 
+                    }
+                });
+            },
+        };
+
+    $.fn[ pluginName ] = function( method ) {
+
+        if ( methods[ method ] ) {
+            return methods[ method ].apply( this, Array.prototype.slice.call( arguments, 1 ));
+        } else if ( typeof method === 'object' || ! method ) {
+            return methods.init.apply( this, arguments );
         } else {
-            roots = root;
-        }
+            $.error( 'Method ' +  method + ' does not exist on jQuery.' + pluginName );
+        } 
 
-        // creating plention objs
-        for ( i = 0, k = roots.length; i < k; i++ ) {
-            new Plention( events, animations, roots[i] );
-        }
-
-
-
-        // for ( i = 0, k = roots.length; i < k; i++ ) {
-        //     bind(roots[i], events.in, function(){
-        //         beginAnimation(animations, this);
-        //     });
-        // }
-
-        // for ( i = 0, k = roots.length; i < k; i++ ) {
-        //     bind(roots[i], events.out, function(){
-        //         console.log('mouse leave');
-        //     });
-        // }
-        
     }
 
-    window.plention = plention;
-
-})(this);
+})( window.jQuery );
