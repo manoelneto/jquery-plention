@@ -108,9 +108,28 @@
         init : function() {
             this.fixAttr();
             this.appendDefaultAttr();
+            this.saveInitialState();
         },
 
         /**
+         * 
+         * Save Initial State
+         * 
+         */
+
+        saveInitialState : function() {
+            var properties = this.animation.properties,
+                prop, initialState = {};
+
+            for ( var i = 0, k = properties.length; i < k; i++ ) {
+                prop = properties[ i ];
+                initialState[ prop.property ] = this.$objs.css( prop.property );
+            }
+
+            this.initialState = initialState;
+        },
+
+         /**
          * 
          * Fix users atributes
          * 
@@ -124,6 +143,8 @@
             if ( _type( animation.selectors ) === 'string' ) {
                 animation.selectors = [ animation.selectors ];
             }
+
+            this.$objs = this.$root.find( animation.selectors.join(',') );
 
             // properties, like background-color:red;margin-top:10px;
             // to { "background-color": "red", "margin-top": "10px" }
@@ -170,6 +191,43 @@
 
         /**
          * 
+         * Make the animation
+         * 
+         */
+
+        animate : function() {
+            var $objs = this.$objs,
+                currentDuration = this.currentDuration,
+                properties = this.animation.properties,
+                joinedProperties = {},
+                prop;
+
+            // join all properties in a object
+            for ( var i = 0, k = properties.length; i < k; i++ ) {
+                prop = properties[ i ];
+                joinedProperties[ prop.property ] = prop.value;
+            }
+
+            $objs.stop(true).animate(joinedProperties, currentDuration);
+        },
+
+        /**
+         * 
+         * Make the deanimation
+         * 
+         */
+
+        deanimate : function() {
+
+            var $objs = this.$objs,
+                currentDuration = this.currentDuration,
+                properties = this.initialState;
+
+            $objs.stop(true).animate(properties, currentDuration);
+        },
+
+        /**
+         * 
          * Starts this animation, not run
          * 
          */
@@ -180,14 +238,18 @@
                 that = this;
 
             currentDuration = Math.min( this.animation.duration, this.animation.timeout + this.animation.duration - this.plention.animationOffset );
-            currentTimeout = Math.max(0, this.animation.timeout - this.animationOffset);
 
-            this.currentDuration = currentDuration;
 
-            if ( currentTimeout !== 0 ) {
-                this.timeout_obj = setTimeout(that.animate, currentTimeout);
-            } else {
-                that.animate();
+            if ( currentDuration > 0 ) {
+                currentTimeout = Math.max(0, this.animation.timeout - this.plention.animationOffset);
+
+                this.currentDuration = currentDuration;
+
+                if ( currentTimeout > 0 ) {
+                    this.timeout_obj = setTimeout(function(){ that.animate(); }, currentTimeout);
+                } else {
+                    that.animate();
+                }
             }
 
         },
@@ -199,6 +261,23 @@
          */
         stop : function() {
             this.clearTimeout();
+
+            var currentDuration, currentTimeout,
+                that = this;
+
+            currentDuration = Math.min( this.animation.duration, this.plention.animationOffset - this.animation.timeout );
+
+            if ( currentDuration > 0 ) {
+                currentTimeout = Math.max( 0, this.plention.animationOffset - this.animation.timeout - this.animation.duration );
+
+                this.currentDuration = currentDuration;
+
+                if ( currentTimeout > 0 ) {
+                    this.timeout_obj = setTimeout(function(){ that.deanimate(); }, currentTimeout);
+                } else {
+                    that.deanimate();
+                }
+            }
 
         }
     }
@@ -277,7 +356,7 @@
         appendListeners : function() {
 
             var events = this.events,
-                $root = this.$root
+                $root = this.$root,
                 that = this;
 
             // append events in
@@ -323,6 +402,8 @@
 
             this.animationOffset = Math.max(0, Math.min(animationDuration, this.animationOffset - ( now - start_time ) ));
             this.start_time = now;
+
+            console.dir( this );
 
             for ( var i = 0, k = plentions.length; i < k; i++ ) {
                 plentions[ i ].start();
